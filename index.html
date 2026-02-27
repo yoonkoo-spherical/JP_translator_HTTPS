@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>한일 번역기</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 0 20px; }
+        textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; }
+        button { padding: 10px 15px; margin: 5px 5px 5px 0; cursor: pointer; }
+        #output { margin-top: 20px; padding: 15px; background-color: #f4f4f4; border-radius: 5px; min-height: 50px; }
+    </style>
+</head>
+<body>
+    <h2>초경량 한일 번역기</h2>
+    
+    <textarea id="inputText" placeholder="텍스트를 입력하거나 하단의 음성 버튼을 누르십시오."></textarea>
+    
+    <div>
+        <button onclick="translateText('KO', 'JA')">텍스트 번역 (한 → 일)</button>
+        <button onclick="translateText('JA', 'KO')">텍스트 번역 (일 → 한)</button>
+    </div>
+    <div style="margin-top: 10px;">
+        <button onclick="startSpeechRecognition('ko-KR', 'KO', 'JA')">🎤 한국어 음성 번역</button>
+        <button onclick="startSpeechRecognition('ja-JP', 'JA', 'KO')">🎤 일본어 음성 번역</button>
+    </div>
+
+    <div id="output">결과 대기 중...</div>
+
+    <script>
+        // 텍스트 번역 API 호출
+        async function translateText(source, target, textToTranslate = null) {
+            const text = textToTranslate || document.getElementById('inputText').value.trim();
+            if (!text) return alert("번역할 텍스트가 없습니다.");
+
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerText = "번역 진행 중...";
+
+            try {
+                const response = await fetch('/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, source_lang: source, target_lang: target })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    outputDiv.innerText = data.translated_text;
+                } else {
+                    outputDiv.innerText = "서버 오류: " + data.detail;
+                }
+            } catch (error) {
+                outputDiv.innerText = "통신 오류: " + error.message;
+            }
+        }
+
+        // 클라이언트 사이드 음성 인식 (Web Speech API)
+        function startSpeechRecognition(langCode, sourceLang, targetLang) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome Edge 등을 사용하십시오.");
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.lang = langCode;
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = function() {
+                document.getElementById('output').innerText = "음성 입력 대기 중...";
+            };
+
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('inputText').value = transcript;
+                translateText(sourceLang, targetLang, transcript);
+            };
+
+            recognition.onerror = function(event) {
+                document.getElementById('output').innerText = "음성 인식 실패: " + event.error;
+            };
+
+            recognition.start();
+        }
+    </script>
+</body>
+</html>
