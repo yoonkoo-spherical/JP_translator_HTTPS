@@ -13,7 +13,7 @@ genai.configure(api_key=api_key)
 
 app = FastAPI()
 
-# CORS 설정 (클라우드 환경에서 발생할 수 있는 통신 차단 방지)
+# CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,7 +43,8 @@ model = genai.GenerativeModel(
 async def translate_text(req: TranslationRequest):
     try:
         prompt = f"[{req.source_lang}]->[{req.target_lang}]\n{req.text}"
-        response = model.generate_content(prompt)
+        # 속도 개선: 이벤트 루프 차단을 방지하기 위해 비동기 메서드(generate_content_async) 사용
+        response = await model.generate_content_async(prompt)
         return {"translated_text": response.text.strip()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
