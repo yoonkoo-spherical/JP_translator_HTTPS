@@ -3,55 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>한국어 → 일본어 번역기</title>
+    <title>한일 번역기</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 0 20px; }
+        
+        /* 탭 UI 스타일 */
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #ccc; }
+        .tab-button { flex: 1; padding: 10px; cursor: pointer; border: none; background: none; font-size: 16px; color: #555; }
+        .tab-button.active { font-weight: bold; border-bottom: 2px solid #007bff; margin-bottom: -2px; color: #007bff; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
         textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; }
-        button { padding: 10px 15px; margin: 5px 5px 5px 0; cursor: pointer; }
+        button.action-btn { padding: 10px 15px; margin: 5px 5px 5px 0; cursor: pointer; }
         #output { margin-top: 20px; padding: 15px; background-color: #f4f4f4; border-radius: 5px; min-height: 50px; }
         .time-log { font-size: 0.85em; color: #555; margin-top: 10px; }
-        #history { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px; }
-        .history-item { padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 0.9em; }
+        
+        /* 이력 UI 스타일 */
+        .history-item { padding: 10px 0; border-bottom: 1px dashed #eee; font-size: 0.95em; }
+        .history-empty { color: #999; padding: 20px 0; text-align: center; }
     </style>
 </head>
 <body>
-    <h2>초경량 한일 번역기 (한국어 → 일본어)</h2>
-    
-    <textarea id="inputText" placeholder="텍스트를 입력하거나 하단의 음성 버튼을 누르십시오."></textarea>
-    
-    <div>
-        <button onclick="translateText('KO', 'JA')">텍스트 번역 (한 → 일)</button>
-    </div>
-    <div style="margin-top: 10px;">
-        <button onclick="startSpeechRecognition('ko-KR', 'KO', 'JA')">🎤 한국어 음성 번역</button>
+    <h2>초경량 한일 번역기</h2>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="switchTab(event, 'translateTab')">번역기</button>
+        <button class="tab-button" onclick="switchTab(event, 'historyTab')">번역 이력</button>
     </div>
 
-    <div id="output">결과 대기 중...</div>
+    <div id="translateTab" class="tab-content active">
+        <textarea id="inputText" placeholder="텍스트를 입력하거나 하단의 음성 버튼을 누르십시오."></textarea>
+        
+        <div>
+            <button class="action-btn" onclick="translateText('KO', 'JA')">텍스트 번역 (한 → 일)</button>
+        </div>
+        <div style="margin-top: 10px;">
+            <button class="action-btn" onclick="startSpeechRecognition('ko-KR', 'KO', 'JA')">🎤 한국어 음성 번역 (한 → 일)</button>
+            <button class="action-btn" onclick="startSpeechRecognition('ja-JP', 'JA', 'KO')">🎤 일본어 음성 번역 (일 → 한)</button>
+        </div>
 
-    <div id="history">
-        <h3>최근 번역 이력 (최대 10개)</h3>
-        <div id="historyList"></div>
+        <div id="output">결과 대기 중...</div>
+    </div>
+
+    <div id="historyTab" class="tab-content">
+        <div id="historyList">
+            <div class="history-empty">기록된 번역 이력이 없습니다.</div>
+        </div>
     </div>
 
     <script>
+        // 탭 전환 로직
+        function switchTab(event, tabId) {
+            // 모든 탭 콘텐츠 숨김
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+
+            // 모든 탭 버튼 비활성화
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(button => button.classList.remove('active'));
+
+            // 선택된 탭과 버튼 활성화
+            document.getElementById(tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
         // 번역 이력 저장용 배열
         let translationHistory = [];
 
         function updateHistoryUI() {
             const historyList = document.getElementById('historyList');
+            if (translationHistory.length === 0) {
+                historyList.innerHTML = '<div class="history-empty">기록된 번역 이력이 없습니다.</div>';
+                return;
+            }
+            
             historyList.innerHTML = '';
-            translationHistory.forEach((item, index) => {
+            translationHistory.forEach((item) => {
                 const div = document.createElement('div');
                 div.className = 'history-item';
-                div.innerHTML = `<strong>[${item.time}초]</strong> ${item.original} ➔ ${item.translated}`;
+                div.innerHTML = `<strong>[${item.time}초]</strong> ${item.original} ➔ <strong>${item.translated}</strong>`;
                 historyList.appendChild(div);
             });
         }
 
         function addHistory(original, translated, timeTaken) {
-            // 배열의 맨 앞에 새 항목 추가
             translationHistory.unshift({ original, translated, time: timeTaken });
-            // 10개를 초과하면 마지막 항목 제거
             if (translationHistory.length > 10) {
                 translationHistory.pop();
             }
@@ -65,7 +102,7 @@
             const outputDiv = document.getElementById('output');
             outputDiv.innerHTML = "번역 진행 중...";
 
-            const startTime = performance.now(); // 타이머 시작
+            const startTime = performance.now();
 
             try {
                 const response = await fetch('/translate', {
@@ -75,8 +112,8 @@
                 });
                 const data = await response.json();
                 
-                const endTime = performance.now(); // 타이머 종료
-                const timeTaken = ((endTime - startTime) / 1000).toFixed(2); // 초 단위 소수점 둘째 자리까지 계산
+                const endTime = performance.now();
+                const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
 
                 if (response.ok) {
                     outputDiv.innerHTML = `${data.translated_text}<div class="time-log">소요 시간: ${timeTaken}초</div>`;
