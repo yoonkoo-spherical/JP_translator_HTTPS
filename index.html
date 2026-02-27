@@ -3,38 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>한일 번역기</title>
+    <title>한국어 → 일본어 번역기</title>
     <style>
         body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 0 20px; }
         textarea { width: 100%; height: 100px; margin-bottom: 10px; padding: 10px; box-sizing: border-box; }
         button { padding: 10px 15px; margin: 5px 5px 5px 0; cursor: pointer; }
         #output { margin-top: 20px; padding: 15px; background-color: #f4f4f4; border-radius: 5px; min-height: 50px; }
+        .time-log { font-size: 0.85em; color: #555; margin-top: 10px; }
+        #history { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px; }
+        .history-item { padding: 8px 0; border-bottom: 1px dashed #eee; font-size: 0.9em; }
     </style>
 </head>
 <body>
-    <h2>초경량 한일 번역기</h2>
+    <h2>초경량 한일 번역기 (한국어 → 일본어)</h2>
     
     <textarea id="inputText" placeholder="텍스트를 입력하거나 하단의 음성 버튼을 누르십시오."></textarea>
     
     <div>
         <button onclick="translateText('KO', 'JA')">텍스트 번역 (한 → 일)</button>
-        <button onclick="translateText('JA', 'KO')">텍스트 번역 (일 → 한)</button>
     </div>
     <div style="margin-top: 10px;">
         <button onclick="startSpeechRecognition('ko-KR', 'KO', 'JA')">🎤 한국어 음성 번역</button>
-        <button onclick="startSpeechRecognition('ja-JP', 'JA', 'KO')">🎤 일본어 음성 번역</button>
     </div>
 
     <div id="output">결과 대기 중...</div>
 
+    <div id="history">
+        <h3>최근 번역 이력 (최대 10개)</h3>
+        <div id="historyList"></div>
+    </div>
+
     <script>
-        // 텍스트 번역 API 호출
+        // 번역 이력 저장용 배열
+        let translationHistory = [];
+
+        function updateHistoryUI() {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            translationHistory.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.innerHTML = `<strong>[${item.time}초]</strong> ${item.original} ➔ ${item.translated}`;
+                historyList.appendChild(div);
+            });
+        }
+
+        function addHistory(original, translated, timeTaken) {
+            // 배열의 맨 앞에 새 항목 추가
+            translationHistory.unshift({ original, translated, time: timeTaken });
+            // 10개를 초과하면 마지막 항목 제거
+            if (translationHistory.length > 10) {
+                translationHistory.pop();
+            }
+            updateHistoryUI();
+        }
+
         async function translateText(source, target, textToTranslate = null) {
             const text = textToTranslate || document.getElementById('inputText').value.trim();
             if (!text) return alert("번역할 텍스트가 없습니다.");
 
             const outputDiv = document.getElementById('output');
-            outputDiv.innerText = "번역 진행 중...";
+            outputDiv.innerHTML = "번역 진행 중...";
+
+            const startTime = performance.now(); // 타이머 시작
 
             try {
                 const response = await fetch('/translate', {
@@ -44,8 +75,12 @@
                 });
                 const data = await response.json();
                 
+                const endTime = performance.now(); // 타이머 종료
+                const timeTaken = ((endTime - startTime) / 1000).toFixed(2); // 초 단위 소수점 둘째 자리까지 계산
+
                 if (response.ok) {
-                    outputDiv.innerText = data.translated_text;
+                    outputDiv.innerHTML = `${data.translated_text}<div class="time-log">소요 시간: ${timeTaken}초</div>`;
+                    addHistory(text, data.translated_text, timeTaken);
                 } else {
                     outputDiv.innerText = "서버 오류: " + data.detail;
                 }
@@ -54,11 +89,10 @@
             }
         }
 
-        // 클라이언트 사이드 음성 인식 (Web Speech API)
         function startSpeechRecognition(langCode, sourceLang, targetLang) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
-                alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome Edge 등을 사용하십시오.");
+                alert("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome, Edge 등을 사용하십시오.");
                 return;
             }
 
