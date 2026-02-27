@@ -22,6 +22,11 @@
         /* 이력 UI 스타일 */
         .history-item { padding: 10px 0; border-bottom: 1px dashed #eee; font-size: 0.95em; }
         .history-empty { color: #999; padding: 20px 0; text-align: center; }
+
+        /* 토큰 진행률 표시줄 스타일 */
+        .progress-container { width: 100%; background-color: #e0e0e0; border-radius: 5px; margin: 15px 0; height: 25px; overflow: hidden; }
+        .progress-bar { height: 100%; background-color: #28a745; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.85em; font-weight: bold; }
+        .token-info { font-size: 0.95em; line-height: 1.6; }
     </style>
 </head>
 <body>
@@ -30,6 +35,7 @@
     <div class="tabs">
         <button class="tab-button active" onclick="switchTab(event, 'translateTab')">번역기</button>
         <button class="tab-button" onclick="switchTab(event, 'historyTab')">번역 이력</button>
+        <button class="tab-button" onclick="switchTab(event, 'tokenTab')">토큰 사용량</button>
     </div>
 
     <div id="translateTab" class="tab-content active">
@@ -52,18 +58,84 @@
         </div>
     </div>
 
+    <div id="tokenTab" class="tab-content">
+        <h3>오늘의 토큰 사용 현황</h3>
+        <div class="progress-container">
+            <div id="tokenProgressBar" class="progress-bar">0%</div>
+        </div>
+        <div class="token-info">
+            <div>일일 할당량: <span id="totalTokenLimitDisplay"></span> 토큰</div>
+            <div>오늘 소모한 토큰: <strong id="usedTokensDisplay">0</strong> 토큰</div>
+            <div>잔여 토큰: <strong id="remainingTokensDisplay">0</strong> 토큰</div>
+        </div>
+    </div>
+
     <script>
+        // 일일 토큰 한도 설정 (임의의 값 적용. 필요에 따라 수정 가능)
+        const DAILY_TOKEN_LIMIT = 100000;
+        document.getElementById('totalTokenLimitDisplay').innerText = DAILY_TOKEN_LIMIT.toLocaleString();
+
+        // 날짜 기준 문자열 생성 (YYYY-MM-DD)
+        function getTodayString() {
+            const today = new Date();
+            return `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+        }
+
+        // 로컬 스토리지에서 일일 토큰 사용량 로드 및 날짜 갱신 처리
+        function loadTokenUsage() {
+            const todayStr = getTodayString();
+            const savedDate = localStorage.getItem('tokenDate');
+            
+            if (savedDate !== todayStr) {
+                localStorage.setItem('tokenDate', todayStr);
+                localStorage.setItem('dailyTokens', '0');
+                return 0;
+            }
+            return parseInt(localStorage.getItem('dailyTokens') || '0', 10);
+        }
+
+        // 토큰 UI 갱신
+        function updateTokenUI() {
+            const usedTokens = loadTokenUsage();
+            const remainingTokens = Math.max(0, DAILY_TOKEN_LIMIT - usedTokens);
+            const percentage = Math.min(100, (usedTokens / DAILY_TOKEN_LIMIT) * 100);
+
+            document.getElementById('usedTokensDisplay').innerText = usedTokens.toLocaleString();
+            document.getElementById('remainingTokensDisplay').innerText = remainingTokens.toLocaleString();
+            
+            const progressBar = document.getElementById('tokenProgressBar');
+            progressBar.style.width = percentage + '%';
+            progressBar.innerText = percentage.toFixed(2) + '%';
+            
+            // 한도 초과 위험 시 색상 변경
+            if (percentage > 90) {
+                progressBar.style.backgroundColor = '#dc3545'; // 빨간색
+            } else if (percentage > 70) {
+                progressBar.style.backgroundColor = '#ffc107'; // 노란색
+            } else {
+                progressBar.style.backgroundColor = '#28a745'; // 녹색
+            }
+        }
+
+        // 초기 UI 렌더링
+        updateTokenUI();
+
+        // 토큰 누적 함수
+        function addDailyTokens(tokens) {
+            let current = loadTokenUsage();
+            current += tokens;
+            localStorage.setItem('dailyTokens', current.toString());
+            updateTokenUI();
+        }
+
         // 탭 전환 로직
         function switchTab(event, tabId) {
-            // 모든 탭 콘텐츠 숨김
             const contents = document.querySelectorAll('.tab-content');
             contents.forEach(content => content.classList.remove('active'));
 
-            // 모든 탭 버튼 비활성화
             const buttons = document.querySelectorAll('.tab-button');
             buttons.forEach(button => button.classList.remove('active'));
 
-            // 선택된 탭과 버튼 활성화
             document.getElementById(tabId).classList.add('active');
             event.currentTarget.classList.add('active');
         }
@@ -82,13 +154,13 @@
             translationHistory.forEach((item) => {
                 const div = document.createElement('div');
                 div.className = 'history-item';
-                div.innerHTML = `<strong>[${item.time}초]</strong> ${item.original} ➔ <strong>${item.translated}</strong>`;
+                div.innerHTML = `<strong>[${item.time}초 / ${item.tokens} 토큰]</strong> ${item.original} ➔ <strong>${item.translated}</strong>`;
                 historyList.appendChild(div);
             });
         }
 
-        function addHistory(original, translated, timeTaken) {
-            translationHistory.unshift({ original, translated, time: timeTaken });
+        function addHistory(original, translated, timeTaken, tokenCount) {
+            translationHistory.unshift({ original, translated, time: timeTaken, tokens: tokenCount });
             if (translationHistory.length > 10) {
                 translationHistory.pop();
             }
@@ -116,8 +188,11 @@
                 const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
 
                 if (response.ok) {
-                    outputDiv.innerHTML = `${data.translated_text}<div class="time-log">소요 시간: ${timeTaken}초</div>`;
-                    addHistory(text, data.translated_text, timeTaken);
+                    const tokensUsed = data.token_count || 0;
+                    outputDiv.innerHTML = `${data.translated_text}<div class="time-log">소요 시간: ${timeTaken}초 | 소모 토큰: ${tokensUsed}</div>`;
+                    
+                    addHistory(text, data.translated_text, timeTaken, tokensUsed);
+                    addDailyTokens(tokensUsed);
                 } else {
                     outputDiv.innerText = "서버 오류: " + data.detail;
                 }
