@@ -43,9 +43,17 @@ model = genai.GenerativeModel(
 async def translate_text(req: TranslationRequest):
     try:
         prompt = f"[{req.source_lang}]->[{req.target_lang}]\n{req.text}"
-        # 속도 개선: 이벤트 루프 차단을 방지하기 위해 비동기 메서드(generate_content_async) 사용
         response = await model.generate_content_async(prompt)
-        return {"translated_text": response.text.strip()}
+        
+        # 소모된 총 토큰 수량 추출
+        token_count = 0
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            token_count = response.usage_metadata.total_token_count
+
+        return {
+            "translated_text": response.text.strip(),
+            "token_count": token_count
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
